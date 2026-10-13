@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>4D 화산 모니터링</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--pn:rgba(255,255,255,.9);--fg:#1d1b19;--mut:#6f6a64;--ln:rgba(0,0,0,.14);--ac:#e8590c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pn:rgba(28,25,22,.9);--fg:#f1ede8;--mut:#aaa39b;--ln:rgba(255,255,255,.16)}}
+:root[data-theme="dark"]{--pn:rgba(28,25,22,.9);--fg:#f1ede8;--mut:#aaa39b;--ln:rgba(255,255,255,.16)}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+input{-webkit-user-select:text;user-select:text}
+body{margin:0;height:100%;background:#16212e;color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+#app{position:relative;width:100%;height:100%}
+canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+.box{background:var(--pn);border:1px solid var(--ln);border-radius:14px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#hud{position:absolute;left:10px;right:10px;top:10px;padding:10px 12px}
+#hud .r{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#date{font-weight:700;font-size:17px}
+#badge{color:#fff;font-weight:700;padding:3px 12px;border-radius:99px;font-size:14px;background:#2e9e4f}
+#bar{height:5px;border-radius:3px;background:var(--ln);margin-top:8px;overflow:hidden}
+#bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2e9e4f,#e0a100,#e8590c,#c92a2a)}
+#bar+div{font-size:11.5px;color:var(--mut);margin-top:4px;display:flex;justify-content:space-between}
+#panel{position:absolute;left:10px;right:10px;bottom:10px;padding:10px}
+#hint{font-size:12px;color:var(--mut);margin-bottom:8px;text-align:center}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+button{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--ln);border-radius:10px;padding:8px 4px;font-size:13px;cursor:pointer}
+.seg button.on,.seg2 button.on{border-color:var(--ac);background:rgba(232,89,12,.16);font-weight:600}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+.row{display:flex;align-items:center;gap:6px;margin:8px 0}
+.row span{flex:1;font-size:12.5px;color:var(--mut)}
+.row button{padding:6px 12px}
+#start{width:100%;background:var(--ac);border-color:var(--ac);color:#fff;font-weight:700;font-size:15px;padding:12px}
+#res{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45)}
+#res .box{padding:20px 22px;text-align:center;max-height:86%;overflow:auto;max-width:92%}
+#res .r1{font-size:24px;font-weight:700}#res .r1 b{font-size:40px;color:var(--ac)}
+#res .r2{font-size:13px;color:var(--mut);margin:8px 0 14px}
+#panel.off>*:not(#ed):not(#ed2){opacity:.45;pointer-events:none}
+#sv{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--fg);background:transparent;border:1px solid var(--ln);border-radius:8px;padding:6px 8px;user-select:text;-webkit-user-select:text;touch-action:auto}
+.seg2{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+#toast{position:absolute;left:50%;top:256px;transform:translateX(-50%);padding:6px 14px;border-radius:99px;font-size:13px;font-weight:600;background:rgba(0,0,0,.78);color:#fff;opacity:0;transition:opacity .25s;pointer-events:none;white-space:nowrap}
+#start{margin-top:8px}
+#start.dis{opacity:.45}
+#chartbox{position:absolute;left:10px;right:10px;top:112px;height:135px;display:none;pointer-events:none;overflow:hidden;opacity:.94}
+#ed input{flex:2;accent-color:var(--ac)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud" class="box">
+    <div class="r"><span id="date">-</span><span id="badge">안전</span><span>🌋 <b id="ec">0</b>회</span></div>
+    <div id="bar"><i id="barf"></i></div>
+    <div><span>센서 감시 지수 · 가상 시뮬레이션</span><span id="sub">시작 전</span></div>
+  </div>
+  <div id="chartbox" class="box"><canvas id="chart"></canvas></div>
+  <div id="panel" class="box">
+    <div id="hint">지형 탭=센서 설치 · 센서 탭=값 입력</div>
+    <div class="seg" id="types"></div>
+    <div class="row" id="ed" style="display:none"><span id="edn" style="flex:none"></span><span style="flex:1"></span><button id="del">삭제</button></div>
+    <div class="row" id="ed2" style="display:none"><span style="flex:none">값</span><input id="sv" type="number" inputmode="decimal" step="any" placeholder="자동 (시뮬레이션 값)"><b id="su" style="font-size:12.5px;min-width:30px"></b><button id="ssave">💾</button><button id="sauto">자동</button></div>
+    <div class="row"><span id="cov"></span><button id="undo">↩ 취소</button><button id="clear">🗑 초기화</button></div>
+    <div class="seg2" id="modes"><button data-m="year" class="on">📅 1년 (30초)</button><button data-m="one">💥 1회 분화</button></div>
+    <button id="start">▶ 1년 시뮬레이션 시작 (30초)</button>
+  </div>
+  <div id="toast"></div>
+  <div id="res"><div class="box"><div class="r1" id="r1"></div><div class="r2" id="rs" style="line-height:1.7"></div><button id="gview" style="padding:10px 16px;margin-right:8px">📈 그래프 보기</button><button id="again" style="padding:10px 22px">센서 재배치</button></div></div>
+</div>
+<script>
+const TYPES={seis:{n:"지진계",c:0x3b82f6,R:26,g:.9},gps:{n:"GPS",c:0x22c55e,R:20,g:.85},gas:{n:"가스",c:0xeab308,R:22,g:.8},heat:{n:"열센서",c:0xf97316,R:11,g:.95}};
+const $=id=>document.getElementById(id),MAXS=8;
+const gs=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(6.283*Math.random());
+let sel="seis";
+
+// ---- 지형 ----
+const hash=(x,y)=>{const n=Math.sin(x*127.1+y*311.7)*43758.5453;return n-Math.floor(n)};
+const vn=(x,y)=>{const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+ return hash(xi,yi)*(1-u)*(1-v)+hash(xi+1,yi)*u*(1-v)+hash(xi,yi+1)*(1-u)*v+hash(xi+1,yi+1)*u*v};
+const fbm=(x,y)=>{let a=.5,f=1,t=0;for(let i=0;i<5;i++){t+=a*vn(x*f,y*f);f*=2.03;a*=.5}return t};
+const H=(x,z)=>{const r=Math.hypot(x,z),cone=Math.pow(Math.max(0,1-r/38),1.5)*24,cr=-10*Math.exp(-((r/4)**2));
+ const n=(1.1*Math.sin(x*.33)*Math.cos(z*.29)+.6*Math.sin(x*.8+z*.65)+.4*Math.sin(z*1.1-x*.5))*(.25+Math.min(r,30)/30);
+ const f=(fbm(x*.11+5,z*.11)-.5)*6*(.3+Math.min(r,30)/30)+(fbm(x*.45,z*.45)-.5)*1.1;
+ const gul=r>5?Math.sin(Math.atan2(z,x)*17+fbm(x*.07,z*.07)*9)*.8*Math.min(1,cone/9):0;
+ return cone+cr+n+f+gul-1.8};
+const H0=H(0,0);
+const scene=new THREE.Scene();{const sk=document.createElement("canvas");sk.width=2;sk.height=256;const q=sk.getContext("2d"),gr=q.createLinearGradient(0,0,0,256);
+ gr.addColorStop(0,"#2f5f9a");gr.addColorStop(.55,"#8fb4d9");gr.addColorStop(1,"#d9e4ee");q.fillStyle=gr;q.fillRect(0,0,2,256);
+ const tx=new THREE.CanvasTexture(sk);tx.minFilter=THREE.LinearFilter;scene.background=tx}
+const FOG0=new THREE.Color(0xc9d9e8),FOG1=new THREE.Color(0x5e5650);scene.fog=new THREE.Fog(0xc9d9e8,110,360);
+const camera=new THREE.PerspectiveCamera(50,1,.5,600);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
+$("app").insertBefore(renderer.domElement,$("hud"));const cv=renderer.domElement;
+const g=new THREE.PlaneGeometry(80,80,150,150);g.rotateX(-Math.PI/2);
+const P3=g.attributes.position,cols=new Float32Array(P3.count*3),cc=new THREE.Color();
+const kG=new THREE.Color(0x3d6a2c),kG2=new THREE.Color(0x768a3f),kR=new THREE.Color(0x6e5d4b),kA=new THREE.Color(0x2b2725),kS=new THREE.Color(0xcfc08f),kV=new THREE.Color();
+function tcol(x,y,z){const r=Math.hypot(x,z),sl=Math.hypot(H(x+1,z)-H(x-1,z),H(x,z+1)-H(x,z-1))/2,n=fbm(x*.7,z*.7);
+ if(y<.55)return cc.copy(kS).multiplyScalar(.82+n*.3);
+ const veg=Math.max(0,Math.min(1,(8.5-y)/4.5))*Math.max(0,1-sl*.85)*(r>10?1:0);
+ cc.copy(kR).lerp(kA,Math.min(1,Math.max(0,(y-4.5)/8)));cc.lerp(kV.copy(kG).lerp(kG2,n),veg);return cc.multiplyScalar(.78+n*.4)}
+for(let i=0;i<P3.count;i++){const x=P3.getX(i),z=P3.getZ(i),y=H(x,z);P3.setY(i,y);const c=tcol(x,y,z);cols[i*3]=c.r;cols[i*3+1]=c.g;cols[i*3+2]=c.b}
+g.setAttribute("color",new THREE.BufferAttribute(cols,3));g.computeVertexNormals();
+const terrain=new THREE.Mesh(g,new THREE.MeshLambertMaterial({vertexColors:true}));scene.add(terrain);
+const wg=new THREE.PlaneGeometry(500,500,48,48).rotateX(-Math.PI/2),W0=Float32Array.from(wg.attributes.position.array);
+scene.add(new THREE.Mesh(wg,new THREE.MeshPhongMaterial({color:0x1e5f7e,specular:0x99bbcc,shininess:70,transparent:true,opacity:.9})));
+const hemi=new THREE.HemisphereLight(0xbcd6f5,0x4a3d2e,.85);scene.add(hemi);
+const sun=new THREE.DirectionalLight(0xfff1dc,1);sun.position.set(40,60,25);scene.add(sun);
+const glowL=new THREE.PointLight(0xff5a00,0,70);glowL.position.set(0,H0+3,0);scene.add(glowL);
+const glow=new THREE.Mesh(new THREE.CircleGeometry(4.2,28).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0x2a0a00}));glow.position.y=H0+.3;scene.add(glow);
+const gC1=new THREE.Color(0x2a0a00),gC2=new THREE.Color(0xff7a1a);
+
+// ---- 입자: 화산재 기둥 / 용암탄 / 수증기 ----
+const R=(a,b)=>a+Math.random()*(b-a),PR=renderer.getPixelRatio(),WIND=3,CL=[];let ashK=0,lastFlow=0,nextRumble=0;
+function mkPool(n,add){const g2=new THREE.BufferGeometry(),P=new Float32Array(n*3).fill(-999),C=new Float32Array(n*4),S=new Float32Array(n);
+ g2.setAttribute("position",new THREE.BufferAttribute(P,3));g2.setAttribute("col",new THREE.BufferAttribute(C,4));g2.setAttribute("size",new THREE.BufferAttribute(S,1));
+ const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:add?THREE.AdditiveBlending:THREE.NormalBlending,
+  vertexShader:"attribute vec4 col;attribute float size;varying vec4 vc;void main(){vc=col;vec4 mv=modelViewMatrix*vec4(position,1.);gl_PointSize=size*"+(260*PR).toFixed(1)+"/-mv.z;gl_Position=projectionMatrix*mv;}",
+  fragmentShader:"varying vec4 vc;void main(){float d=length(gl_PointCoord-.5)*2.;gl_FragColor=vec4(vc.rgb,smoothstep(1.,.15,d)*vc.a);}"});
+ const pt=new THREE.Points(g2,m);pt.frustumCulled=false;scene.add(pt);
+ return{n,P,C,S,g:g2,V:new Float32Array(n*3),life:new Float32Array(n).fill(1),age:new Float32Array(n).fill(9),i:0}}
+const smoke=mkPool(1200,false),lava=mkPool(500,true);
+function put(o,x,y,z,vx,vy,vz,life){const i=o.i++%o.n;o.P.set([x,y,z],i*3);o.V.set([vx,vy,vz],i*3);o.life[i]=life;o.age[i]=0}
+function eruptEmit(dt){
+ for(let k=0,n=Math.round(150*dt);k<n;k++){const a=R(0,6.283),s=R(0,4);put(smoke,R(-1.5,1.5),H0+1,R(-1.5,1.5),Math.cos(a)*s,R(14,26),Math.sin(a)*s,R(5,8))}
+ for(let k=0,n=Math.round(90*dt);k<n;k++){const a=R(0,6.283),s=R(2,9);put(lava,R(-1,1),H0+1,R(-1,1),Math.cos(a)*s,R(16,32),Math.sin(a)*s,R(2.2,3.6))}}
+function stepPool(o,dt,grav,drag,fn){for(let i=0;i<o.n;i++){let a=o.age[i];if(a>=o.life[i]){o.P[i*3+1]=-999;continue}a+=dt;o.age[i]=a;const t=a/o.life[i],v=o.V;
+ v[i*3+1]-=grav*dt;for(let j=0;j<3;j++){v[i*3+j]*=1-drag*dt;o.P[i*3+j]+=v[i*3+j]*dt}o.P[i*3]+=WIND*t*dt;fn(o,i,t)}
+ o.g.attributes.position.needsUpdate=o.g.attributes.col.needsUpdate=o.g.attributes.size.needsUpdate=true}
+const smokeFn=(o,i,t)=>{const st=o.life[i]<5,d=st?.88:.12+.22*t;o.C.set([d,d,d*.97,(st?.3:.62)*Math.min(1,t*6)*(1-t)],i*4);o.S[i]=(st?2:3)+(st?8:13)*t};
+const lavaFn=(o,i,t)=>{o.C.set([1,.55-.4*t,.12,1-t],i*4);o.S[i]=1.1-.5*t};
+// 용암류: 분화구에서 경사를 따라 흘러내림
+const FLOWS=[],MAXF=5,FL=130,fm=new THREE.InstancedMesh(new THREE.SphereGeometry(.85,8,6),new THREE.MeshBasicMaterial(),MAXF*FL);
+fm.frustumCulled=false;fm.setColorAt(0,new THREE.Color(0xff8a1f));fm.count=0;scene.add(fm);
+const dm=new THREE.Object3D(),fc=new THREE.Color(),fHot=new THREE.Color(0xff8a1f),fCold=new THREE.Color(0x2a2220);
+function startFlow(){const a=R(0,6.283);let x=5.5*Math.cos(a),z=5.5*Math.sin(a);const pts=[];
+ for(let i=0;i<FL;i++){const gx=H(x+.5,z)-H(x-.5,z),gz=H(x,z+.5)-H(x,z-.5),m=Math.hypot(gx,gz)||1;x+=-gx/m*1.15+R(-.25,.25);z+=-gz/m*1.15+R(-.25,.25);if(H(x,z)<.35)break;pts.push([x,z])}
+ FLOWS.push({pts,t0:performance.now()});if(FLOWS.length>MAXF)FLOWS.shift()}
+function updFlows(now){let c=0;for(const f of FLOWS){const age=(now-f.t0)/1000,rev=Math.min(f.pts.length,Math.floor(age*22)),cool=Math.min(1,age/40);
+ for(let i=0;i<rev;i++){const[x,z]=f.pts[i];dm.position.set(x,H(x,z)+.25,z);dm.scale.setScalar(.8+.2*Math.sin(i));dm.updateMatrix();fm.setMatrixAt(c,dm.matrix);fm.setColorAt(c,fc.copy(fHot).lerp(fCold,cool));c++}}
+ fm.count=c;if(c){fm.instanceMatrix.needsUpdate=true;fm.instanceColor.needsUpdate=true}}
+// 구름
+{const c2=document.createElement("canvas");c2.width=c2.height=128;const q=c2.getContext("2d"),gr=q.createRadialGradient(64,64,4,64,64,62);gr.addColorStop(0,"rgba(255,255,255,.9)");gr.addColorStop(1,"rgba(255,255,255,0)");q.fillStyle=gr;q.fillRect(0,0,128,128);
+ const tx=new THREE.CanvasTexture(c2);for(let i=0;i<14;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,transparent:true,opacity:R(.35,.65),depthWrite:false,fog:false}));sp.scale.set(R(40,80),R(14,24),1);sp.position.set(R(-120,120),R(55,85),R(-120,120));scene.add(sp);CL.push(sp)}}
+// 분화 굉음 (저주파 노이즈)
+let ac;function rumble(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const b=ac.createBuffer(1,ac.sampleRate*2.6|0,ac.sampleRate),d=b.getChannelData(0);let l=0;
+ for(let i=0;i<d.length;i++){l=(l+.02*(Math.random()*2-1))/1.02;d[i]=l*3.5*Math.min(1,i/8000)*Math.max(0,1-i/d.length)}
+ const so=ac.createBufferSource();so.buffer=b;const f=ac.createBiquadFilter();f.type="lowpass";f.frequency.value=180;const gn=ac.createGain();gn.gain.value=.9;so.connect(f);f.connect(gn);gn.connect(ac.destination);so.start()}catch(e){}}
+
+// ---- 센서 ----
+const sensors=[],grp=new THREE.Group(),wgrp=new THREE.Group();scene.add(grp,wgrp);
+function addSensor(type,x,z){const m=new THREE.Group(),gm=new THREE.MeshLambertMaterial({color:0xb9bec3});
+ const box=new THREE.Mesh(new THREE.BoxGeometry(1,.8,.8),gm);box.position.y=.45;
+ const mast=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,2.6,6),gm);mast.position.set(.35,1.7,0);
+ const sol=new THREE.Mesh(new THREE.BoxGeometry(1.5,.06,1),new THREE.MeshLambertMaterial({color:0x1b2f55}));sol.position.set(-.1,2.15,0);sol.rotation.z=.45;
+ const b=new THREE.Mesh(new THREE.SphereGeometry(.28,10,8),new THREE.MeshBasicMaterial({color:TYPES[type].c}));b.position.set(.35,3.1,0);
+ const hit=new THREE.Mesh(new THREE.SphereGeometry(1.8,8,6),new THREE.MeshBasicMaterial({visible:false}));hit.position.y=1.6;
+ m.add(box,mast,sol,b,hit);m.position.set(x,H(x,z),z);m.rotation.y=Math.random()*6;grp.add(m);sensors.push({type,x,z,m,ball:b,fault:null,fl:0,k:1,man:null})}
+function coverOf(L){let tot=1;for(const k in TYPES){let p=1,mk=1;for(const s of L)if(s.type===k){p*=1-sensV(s);mk=Math.max(mk,s.k)}tot*=1-Math.min(1-p,Math.min(.98,TYPES[k].g*mk))}return 1-tot}
+function refresh(){save();$("start").classList.toggle("dis",!sensors.length);$("cov").textContent=`센서 ${sensors.length}/${MAXS} · 감시 범위 ${cover()>=.75?"충분":cover()>=.45?"보통":"부족"}`}
+$("types").innerHTML=Object.entries(TYPES).map(([k,t])=>`<button data-k="${k}" class="${k===sel?"on":""}"><i class="dot" style="background:#${t.c.toString(16).padStart(6,"0")}"></i>${t.n}</button>`).join("");
+$("types").onclick=e=>{const b=e.target.closest("button");if(!b)return;sel=b.dataset.k;[...$("types").children].forEach(x=>x.classList.toggle("on",x===b))};
+$("undo").onclick=()=>{if(run||!sensors.length)return;grp.remove(sensors.pop().m);select(null);reset();hud();refresh()};
+$("clear").onclick=()=>{if(run)return;while(sensors.length)grp.remove(sensors.pop().m);select(null);reset();hud();refresh()};
+
+// ---- 카메라 조작 ----
+let th=-2.1,ph=1,rad=80;
+function cam(){camera.position.set(rad*Math.sin(ph)*Math.sin(th),7+rad*Math.cos(ph),rad*Math.sin(ph)*Math.cos(th));camera.lookAt(0,7,0)}
+const ptr=new Map(),ray=new THREE.Raycaster(),mouse=new THREE.Vector2();let moved=0,t0=0,pd=0;
+const dist=()=>{const a=[...ptr.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+cv.addEventListener("pointerdown",e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});if(ptr.size===1){moved=0;t0=performance.now()}else{moved=99;pd=dist()}});
+cv.addEventListener("pointermove",e=>{const p=ptr.get(e.pointerId);if(!p)return;const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+ if(ptr.size===1){moved+=Math.abs(dx)+Math.abs(dy);th-=dx*.006;ph=Math.min(1.45,Math.max(.25,ph-dy*.005))}
+ else if(ptr.size===2){const d=dist();rad=Math.min(140,Math.max(28,rad*pd/d));pd=d}});
+const up=e=>{if(ptr.size===1&&moved<8&&e.type==="pointerup"&&performance.now()-t0<400)place(e.clientX,e.clientY);ptr.delete(e.pointerId)};
+cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+cv.addEventListener("wheel",e=>{e.preventDefault();rad=Math.min(140,Math.max(28,rad*(1+e.deltaY*.001)))},{passive:false});
+function place(cx,cy){const r=cv.getBoundingClientRect();
+ mouse.set((cx-r.left)/r.width*2-1,-((cy-r.top)/r.height)*2+1);ray.setFromCamera(mouse,camera);
+ const hs=ray.intersectObjects(grp.children,true)[0];if(hs){const q=sensors.find(q=>{for(let o=hs.object;o;o=o.parent)if(o===q.m)return true;return false});if(q){select(q);return}}
+ if(run||sensors.length>=MAXS)return;
+ const h=ray.intersectObject(terrain)[0];if(!h||h.point.y<.6||Math.hypot(h.point.x,h.point.z)<4)return;
+ addSensor(sel,h.point.x,h.point.z);select(sensors[sensors.length-1]);reset();hud();refresh()}
+
+// ---- 마을 / 대피소 ----
+const cover=()=>coverOf(sensors),sensV=s=>Math.min(1,TYPES[s.type].g*s.k*Math.exp(-Math.hypot(s.x,s.z)/TYPES[s.type].R));
+const V=[-18.2,-10.5],SH=[-25.1,-14.5],POP0=120,NP=24,vg=new THREE.Group();scene.add(vg);
+const wallM=new THREE.MeshLambertMaterial({color:0xe9dcc0}),roofM=new THREE.MeshLambertMaterial({color:0xb5452e});
+[[0,0],[2.4,.6],[-2.2,1.2],[1.2,-2.4],[-1.4,-2.2],[3.2,-1.6],[-3.4,-.6]].forEach(([dx,dz])=>{const x=V[0]+dx,z=V[1]+dz,y=H(x,z);
+ const w=new THREE.Mesh(new THREE.BoxGeometry(1.7,2,1.7),wallM);w.position.set(x,y+.4,z);
+ const r=new THREE.Mesh(new THREE.ConeGeometry(1.5,1,4),roofM);r.position.set(x,y+1.9,z);r.rotation.y=Math.PI/4;vg.add(w,r)});
+const setHouses=b=>{wallM.color.setHex(b?0x2b2623:0xe9dcc0);roofM.color.setHex(b?0x3a2a24:0xb5452e)};
+function label(t,x,z,col){const c=document.createElement("canvas");c.width=256;c.height=96;const q=c.getContext("2d");q.fillStyle="rgba(0,0,0,.65)";q.fillRect(0,0,256,96);
+ q.fillStyle=col;q.font="bold 54px sans-serif";q.textAlign="center";q.textBaseline="middle";q.fillText(t,128,50);
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false}));sp.scale.set(6,2.25,1);sp.position.set(x,H(x,z)+5.5,z);scene.add(sp)}
+label("마을",V[0],V[1],"#fff");label("대피소",SH[0],SH[1],"#67e8f9");
+const shy=H(SH[0],SH[1]),pole=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,3,6),new THREE.MeshLambertMaterial({color:0xffffff})),flag=new THREE.Mesh(new THREE.BoxGeometry(1.6,1,.1),new THREE.MeshBasicMaterial({color:0x22d3ee}));
+pole.position.set(SH[0],shy+1.5,SH[1]);flag.position.set(SH[0]+.8,shy+2.5,SH[1]);scene.add(pole,flag);
+const ppl=[];for(let i=0;i<NP;i++){const m=new THREE.Mesh(new THREE.SphereGeometry(.3,8,6),new THREE.MeshBasicMaterial({color:0xfde047}));scene.add(m);
+ ppl.push({m,ox:V[0]+(Math.random()-.5)*7,oz:V[1]+(Math.random()-.5)*5,tx:SH[0]+(Math.random()-.5)*3,tz:SH[1]+(Math.random()-.5)*3})}
+function placePeople(){const alive=Math.ceil(pop/(POP0/NP));ppl.forEach((p,i)=>{p.m.visible=i<alive;
+ const t=Math.min(1,Math.max(0,evacProg*1.5-i/NP*.5)),x=p.ox+(p.tx-p.ox)*t,z=p.oz+(p.tz-p.oz)*t;p.m.position.set(x,H(x,z)+.5,z)})}
+
+// 나무 (완만한 녹지에 배치)
+{const tm=new THREE.InstancedMesh(new THREE.ConeGeometry(.7,2.6,6),new THREE.MeshLambertMaterial({color:0xffffff}),420),tc=new THREE.Color();let c=0;
+ for(let tr=0;tr<9000&&c<420;tr++){const x=R(-36,36),z=R(-36,36),y=H(x,z),r=Math.hypot(x,z);
+  if(y<.9||y>7.2||r<11||Math.hypot(x-V[0],z-V[1])<6||Math.hypot(x-SH[0],z-SH[1])<4||fbm(x*.18+9,z*.18)<.42)continue;
+  if(Math.hypot(H(x+1,z)-H(x-1,z),H(x,z+1)-H(x,z-1))/2>.85)continue;
+  const sc=R(.7,1.4);dm.position.set(x,y+1.3*sc,z);dm.rotation.set(0,R(0,6),0);dm.scale.set(sc,sc*R(.9,1.3),sc);dm.updateMatrix();tm.setMatrixAt(c,dm.matrix);tm.setColorAt(c,tc.setHSL(R(.25,.33),R(.4,.55),R(.18,.3)));c++}
+ tm.count=c;scene.add(tm);dm.rotation.set(0,0,0)}
+
+// ---- 시뮬레이션 (1년=30초 / 1회 분화) ----
+const ERUPT_DAILY=.6,SPD={year:365/30,one:4},ST=[[25,"안전","#2e9e4f"],[45,"주의","#e0a100"],[65,"경고","#e8590c"],[999,"심각","#c92a2a"]];
+let EV=[],nAlm=0,cntDays=0,evs=[],eruptDay=-9,hist={t:[],al:[],s:[]},mode="year",run=false,day=0,P=25,al=0,ec=0,wells=[],wu=0,nd=0,erupt=0,acc=0,phs=0,start=new Date(),
+ pop=POP0,dead=0,evac=false,evacProg=0,evacUntil=0,evacHit=false,falseAl=0,nFault=0,first=null,endAt=null,scorch=0;
+const fmt=d=>`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+let tt;const toast=t=>{const e=$("toast");e.textContent=t;e.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>e.style.opacity=0,2600)};
+function stepSim(d){
+ // 센서 고장 (두절 / 가짜 이상 신호)
+ for(const s of sensors){if(s.fault){s.fl-=d;if(s.fl<=0)s.fault=null}
+  else if(Math.random()<.005*d){s.fault=Math.random()<.5?"dead":"false";s.fl=6+Math.random()*14;nFault++;
+   toast(s.fault==="dead"?`📡 ${TYPES[s.type].n} 신호 두절`:`⚠ ${TYPES[s.type].n} 오작동 (이상 신호)`)}}
+ // 시나리오(진짜/페이크)가 센서 종류별 활동 수준을 만든다
+ const A={};for(const t of KEY){let a=7+gs()*1.2;for(const ev of EV)a+=act(ev,t,day);A[t]=Math.max(0,a)}
+ P=Math.min(99,Math.max(...KEY.map(t=>A[t])));
+ const L=[],eru=day<eruptDay+1;
+ for(const s of sensors){if(s.fault==="dead"){s.r=null;s.n=null;continue}const v=sensV(s),t=s.type,q=Q0[t],hi=ER[t][0];
+  let n=(s.fault==="false"?75+Math.random()*35:A[t]+gs()*(2+10*(1-v)))*v,r;
+  if(EV.some(x=>x.one&&day>=x.t0&&day<=x.t1&&sensors[x.idx]===s))n=(85+Math.random()*30)*v;
+  if(eru&&s.fault!=="false"){r=hi+(ER[t][1]-hi)*s.ef;n=nOf(t,r)}else r=q+(hi-q)*n/100;
+  if(s.man!=null){r=s.man;n=nOf(t,r)}
+  s.r=r;s.n=n;L.push({s,n})}
+ const cnt=L.filter(x=>x.n>=ALM).length,ns=L.map(x=>Math.min(150,x.n)).sort((x,y)=>y-x);
+ nAlm=cnt;al+=((ns.length>1?ns[1]:(ns[0]||0)*.5)-al)*.35;
+ if(!hist.t.length||Math.floor(day+d)>Math.floor(day)){hist.t.push(day+d);hist.al.push(al);hist.s.push(sensors.map(q=>{if(q.fault==="dead")return null;const x=L.find(y=>y.s===q);return x?x.n:null}))}
+ // 대피 규칙: 센서 2개 이상이 0.75일 이상 연속으로 울릴 때만 대피
+ cntDays=cnt>=2?cntDays+d:0;
+ if(!evac&&cntDays>=.75){evac=true;evacUntil=day+8;evacHit=false;for(const ev of EV)if(!ev.real&&day>=ev.t0&&day<=ev.t1)ev.trig=true;toast("🚨 센서 2개 이상 경보 — 주민 대피 시작")}
+ else if(evac&&cnt<2&&day>=evacUntil){evac=false;if(evacHit)toast("✅ 대피 해제");else{falseAl++;toast("🔔 오경보 — 대피 해제")}}
+ evacProg=Math.min(1,Math.max(0,evacProg+(evac?d/3:-d/2)));
+ if(scorch>0){scorch-=d;if(scorch<=0)setHouses(false)}
+ const ev=EV.find(x=>x.real&&!x.done&&day+d>=x.te);
+ if(ev){ev.done=true;ec++;eruptDay=day;for(const q of sensors)q.ef=Math.random();erupt=performance.now()+2600;
+  const k=Math.round(pop*(1-evacProg));pop-=k;dead+=k;if(evac)evacHit=true;setHouses(true);scorch=30;
+  {const bad=[];sensors.forEach((q,i)=>{if(q.fault||q.n==null||q.n<35)bad.push(i)});evs.push({name:ev.n,day:ev.te,evacOK:evacProg>=.9,bad,ok:evacProg>=.9&&!bad.length&&k===0})}
+  {const nw=performance.now();if(nw-lastFlow>6000){startFlow();lastFlow=nw}if(nw>nextRumble){rumble();nextRumble=nw+2600}}
+  toast(k?`🌋 분화! 미대피 주민 ${k}명 피해`:"🌋 분화! 주민 전원 안전");
+  if(!first){first=new Date(start.getTime()+day*864e5);if(mode==="one")endAt=day+15}}
+ day+=d}
+const vs=()=>evac?(evacProg>=1?"대피 완료":"대피 중"):evacProg>0?"귀가 중":"평상시";
+function hud(){const s=ST.find(x=>al<x[0])||ST[3],on=run||day>0;$("badge").textContent=on?s[1]:"대기";$("badge").style.background=on?s[2]:"#667";
+ $("date").textContent=fmt(new Date(start.getTime()+day*864e5));$("ec").textContent=ec;$("barf").style.width=Math.min(100,al)+"%";
+ $("sub").textContent=on?`🏘 ${vs()} · 👤${pop} · ⚠${sensors.filter(x=>x.fault).length}`+` · 🔔${nAlm}`:"시작 전"}
+function reset(){evs=[];nAlm=0;cntDays=0;FLOWS.length=0;smoke.age.fill(9);lava.age.fill(9);ashK=0;hist={t:[],al:[],s:[]};eruptDay=-9;day=0;P=5;al=0;ec=0;wells=[];wu=0;nd=0;erupt=0;acc=0;phs=Math.random()*6.28;
+ pop=POP0;dead=0;evac=false;evacProg=0;evacUntil=0;evacHit=false;falseAl=0;nFault=0;first=null;endAt=null;scorch=0;setHouses(false);
+ for(const s of sensors){s.fault=null;s.fl=0;s.r=undefined;s.ef=0}
+ while(wgrp.children.length)wgrp.remove(wgrp.children[0]);start=new Date();EV=buildEvents()}
+$("modes").onclick=e=>{const b=e.target.closest("button");if(!b||run)return;mode=b.dataset.m;[...$("modes").children].forEach(x=>x.classList.toggle("on",x===b));
+ $("start").textContent=mode==="one"?"▶ 1회 분화 시뮬레이션 시작":"▶ 1년 시뮬레이션 시작 (30초)";select(null);reset();hud()};
+$("start").onclick=()=>{if(run)return;if(!sensors.length){toast("⚠ 센서를 먼저 설치하세요");return}reset();run=true;$("res").style.display="none";$("panel").classList.add("off");hud()};
+$("gview").onclick=()=>{$("res").style.display="none";$("panel").classList.remove("off")};
+$("again").onclick=()=>{$("res").style.display="none";$("panel").classList.remove("off");reset();hud()};
+function finish(){run=false;if(evac&&!evacHit)falseAl++;
+ $("r1").innerHTML=mode==="one"?(ec?`🌋 <b style="font-size:26px">${fmt(first)}</b> 분화`:"🌋 분화 없음"):`🌋 1년간 <b>${ec}</b>회 분화`;
+ const N=evs.length,na=evs.filter(e=>e.evacOK).length,nb=evs.filter(e=>!e.bad.length).length,bs=new Set(evs.flatMap(e=>e.bad)),
+  fk=EV.filter(e=>!e.real&&e.t1<=day),nf=fk.length,fo=fk.filter(e=>!e.trig).length,ok=N>0&&dead===0&&evs.every(e=>e.ok)&&fo===nf,
+  sc=Math.max(0,Math.round(35*(1-dead/POP0)+25*(N?na/N:1)+20*(N?nb/N:1)+10*(nf?fo/nf:1)+10*cover())),gd=sc>=90?"탁월":sc>=75?"양호":sc>=50?"미흡":"위험",
+  md=d=>{const t=new Date(start.getTime()+d*864e5);return `${t.getMonth()+1}/${t.getDate()}`},
+  log=[...evs.map(e=>[e.day,`${md(e.day)} 🌋 ${e.name} ${e.ok?"✅ 성공":"❌ 실패"}`]),...fk.map(e=>[e.te,`${md(e.te)} 🎭 페이크: ${e.n} ${e.trig?"🔔 오경보":"✅ 무시"}`])].sort((x,y)=>x[0]-y[0]).map(x=>x[1]).join("<br>");
+ $("rs").innerHTML=(N?`<b style="font-size:19px;color:${ok?"#2e9e4f":"#c92a2a"}">${ok?"✅ 대피 성공":"❌ 대피 실패"}</b>`:`<b style="font-size:19px">분화 없음</b>`)+` · <b>${sc}점</b> (${gd})`
+  +`<br>① 분화 전 대피 완료 ${na}/${N}회<br>② 센서 정상 감지 ${nb}/${N}회`+(bs.size?` (문제 센서 ${[...bs].map(i=>"#"+(i+1)).join(" ")})`:"")
+  +`<br>③ 페이크 판별 ${fo}/${nf}회 · 오경보 ${falseAl}회<br>④ 인명 피해 ${dead}명 · 고장 ${nFault}건`
+  +`<div style="font-size:11px;text-align:left;margin-top:8px;line-height:1.55">${log}</div>`
+  +`<div style="font-size:11px;margin-top:6px">${fmt(start)}`+(mode==="year"?` ~ ${fmt(new Date(start.getTime()+365*864e5))}`:"")+` · 배점: 인명 35·대피 25·센서 20·페이크 10·범위 10</div>`;
+ $("res").style.display="flex";hud()}
+
+
+// ---- 센서 선택/감지 정도 설정 + 신호 그래프 ----
+let selS=null;const ring=new THREE.Mesh(new THREE.RingGeometry(1,1.4,24).rotateX(-Math.PI/2),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide}));ring.visible=false;scene.add(ring);
+function select(q){selS=q;ring.visible=!!q;$("ed").style.display=q?"flex":"none";$("ed2").style.display=q?"flex":"none";if(q){$("sv").value=q.man==null?"":q.man;$("su").textContent=UNIT[q.type]}
+ if(q){ring.position.set(q.x,H(q.x,q.z)+.15,q.z);$("edn").textContent=`#${sensors.indexOf(q)+1} ${TYPES[q.type].n}`;}}
+$("sv").oninput=e=>{if(!selS)return;const v=e.target.value;selS.man=v===""||isNaN(+v)?null:+v;save();if(!run){reset();hud()}};
+$("sauto").onclick=()=>{if(!selS)return;selS.man=null;$("sv").value="";save();if(!run){reset();hud()}};
+$("del").onclick=()=>{if(!selS||run)return;grp.remove(selS.m);sensors.splice(sensors.indexOf(selS),1);select(null);reset();hud();refresh()};
+const ch=$("chart"),c2=ch.getContext("2d");
+function drawChart(){const vis=hist.t.length>1;$("chartbox").style.display=vis?"block":"none";if(!vis)return;
+ const dpr=Math.min(2,devicePixelRatio||1),w=ch.clientWidth,h=ch.clientHeight;
+ if(ch.width!==Math.round(w*dpr)){ch.width=Math.round(w*dpr);ch.height=Math.round(h*dpr)}
+ c2.setTransform(dpr,0,0,dpr,0,0);c2.clearRect(0,0,w,h);
+ const cs=getComputedStyle(document.documentElement),fg=cs.getPropertyValue("--fg").trim()||"#fff",mut=cs.getPropertyValue("--mut").trim()||"#999";
+ const Lm=28,Rm=8,Tm=18,Bm=16,xm=mode==="year"?365:Math.max(30,day+3),X=t=>Lm+(w-Lm-Rm)*t/xm,Y=v=>Tm+(h-Tm-Bm)*(1-Math.min(150,Math.max(0,v))/150);
+ c2.font="10px sans-serif";c2.textBaseline="middle";
+ [0,50,100,150].forEach(v=>{c2.strokeStyle="rgba(128,128,128,.25)";c2.lineWidth=1;c2.beginPath();c2.moveTo(Lm,Y(v));c2.lineTo(w-Rm,Y(v));c2.stroke();c2.fillStyle=mut;c2.textAlign="right";c2.fillText(v,Lm-4,Y(v))});
+ c2.setLineDash([4,3]);[[45,"#e0a100"],[55,"#e8590c"]].forEach(([v,c])=>{c2.strokeStyle=c;c2.beginPath();c2.moveTo(Lm,Y(v));c2.lineTo(w-Rm,Y(v));c2.stroke()});c2.setLineDash([]);
+ c2.fillStyle=fg;c2.textAlign="left";c2.fillText("가는선=센서 굵은선=감시지수 100=분화 ┄45 ┄55",Lm,8);
+ c2.fillStyle=mut;c2.fillText("0일",Lm,h-6);c2.textAlign="right";c2.fillText(Math.round(xm)+"일",w-Rm,h-6);
+ const line=(v,col,wd)=>{c2.beginPath();c2.strokeStyle=col;c2.lineWidth=wd;let pen=false;v.forEach((y,i)=>{if(y==null){pen=false;return}const px=X(hist.t[i]),py=Y(y);pen?c2.lineTo(px,py):c2.moveTo(px,py);pen=true});c2.stroke()};
+ sensors.forEach((q,j)=>{c2.globalAlpha=q===selS?1:.7;line(hist.s.map(a=>a[j]),"#"+TYPES[q.type].c.toString(16).padStart(6,"0"),q===selS?2.2:1)});
+ c2.globalAlpha=1;line(hist.al,fg,2.6)}
+
+
+// ---- 센서 실제 값 / 분화 시 값 범위 / 직접 입력 ----
+const Q0={seis:.3,heat:60,gas:50,gps:.5},ER={seis:[2,4.5],heat:[200,1200],gas:[200,400],gps:[3,100]},UNIT={seis:"M",heat:"°C",gas:"ppm",gps:"m"},KEY=["seis","heat","gas","gps"];
+const nOf=(t,r)=>Math.max(0,(r-Q0[t])/(ER[t][0]-Q0[t])*100);
+const fmtR=q=>q.r===undefined?"":q.r===null?" 두절":" "+(q.type==="seis"?q.r.toFixed(2):q.type==="gps"?q.r.toFixed(1):Math.round(q.r))+UNIT[q.type];
+// ---- 시나리오: 분화 6종(모두 다른 전조) + 페이크 6종 ----
+const ALM=45;
+const SR=[
+ {n:"지진 군발 선행형",L:{seis:[14,170],gps:[8,110],gas:[5,110],heat:[3,100]}},
+ {n:"가스 선행형",L:{gas:[20,180],seis:[6,120],heat:[4,110],gps:[8,100]}},
+ {n:"지각 변형형",L:{gps:[25,190],seis:[9,120],gas:[5,110],heat:[3,100]}},
+ {n:"열 상승형",L:{heat:[12,180],gas:[8,120],seis:[5,110],gps:[7,100]}},
+ {n:"동시 급상승형",L:{seis:[7,150],heat:[7,150],gas:[7,150],gps:[7,150]}},
+ {n:"무전조 급발형",L:{seis:[1.5,110],gas:[1,45],heat:[1,30],gps:[1,30]}}];
+const SF=[
+ {n:"구조지진 (지진 떼)",dec:3,L:{seis:[5,130],gps:[5,40]}},
+ {n:"집중호우 (가스·온도 교란)",dec:4,L:{gas:[3,110],heat:[3,95]}},
+ {n:"낙뢰 (센서 1개 이상)",one:true,dec:1.5,L:{seis:[1,0]}},
+ {n:"장비 노이즈 (순간 스파이크)",dec:.3,L:{seis:[.5,120],heat:[.5,120],gas:[.5,120],gps:[.5,120]}},
+ {n:"계절성 지열 변동",dec:6,L:{heat:[10,80],gps:[12,60]}},
+ {n:"원거리 대지진 영향",dec:2,L:{seis:[2,150],gps:[3,90]}}];
+function act(ev,t,day){const l=ev.L[t];if(!l||!l[1])return 0;const[lead,pk]=l,x=(day-(ev.te-lead))/lead;if(x<0)return 0;
+ if(day<=ev.te)return pk*Math.pow(Math.min(1,x),ev.real?1.5:1.2);return pk*Math.exp(-(day-ev.te)/(ev.real?3:(ev.dec||2)))}
+function buildEvents(){const sh=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]),out=[];
+ const mk=(sc,te,real)=>{const ml=Math.max(...Object.values(sc.L).map(l=>l[0]));return{...sc,real,te,t0:sc.one?te-1.5:te-ml,t1:sc.one?te+1.5:te+(sc.dec||2)*2.5,done:false,trig:false,idx:Math.floor(Math.random()*Math.max(1,sensors.length))}};
+ if(mode==="year")sh([...SR.map(x=>[x,1]),...SF.map(x=>[x,0])]).forEach(([sc,r],k)=>out.push(mk(sc,30+k*29+R(0,6),!!r)));
+ else out.push(mk(sh(SF)[0],20+R(0,4),false),mk(sh(SR)[0],60+R(0,4),true));
+ return out}
+
+// ---- 센서 설정 저장 (각 센서의 위치·감지 정도·입력값) ----
+const SK="volcano4d:v2";
+function save(){try{localStorage.setItem(SK,JSON.stringify(sensors.map(s=>({t:s.type,x:s.x,z:s.z,k:s.k,m:s.man}))))}catch(e){}}
+function load(){try{JSON.parse(localStorage.getItem(SK)||"[]").slice(0,MAXS).forEach(o=>{if(TYPES[o.t]&&isFinite(o.x)&&isFinite(o.z)){addSensor(o.t,o.x,o.z);const s=sensors[sensors.length-1];s.k=1;s.man=o.m==null?null:+o.m}})}catch(e){}}
+$("ssave").onclick=()=>{if(!selS)return;save();toast(`💾 #${sensors.indexOf(selS)+1} ${TYPES[selS.type].n} 값 저장됨`)};
+
+// ---- 렌더 루프 ----
+let last=performance.now();
+function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;
+ if(run){acc+=dt*SPD[mode];const fin=()=>day>=365||(endAt&&day>=endAt);while(acc>=.25&&!fin()){stepSim(.25);acc-=.25}if(fin())finish()}
+ for(const s of sensors)s.ball.material.color.setHex(s.fault==="dead"?0x555555:s.fault==="false"?(now%500<250?0xff2222:0xffffff):s.n>=ALM&&run?(now%600<300?0xff3b30:TYPES[s.type].c):TYPES[s.type].c);
+ if(selS)$("edn").textContent=`#${sensors.indexOf(selS)+1} ${TYPES[selS.type].n}${fmtR(selS)}`;
+ placePeople();
+ const er=now<erupt,t=Math.min(1,P/100);
+if(er)eruptEmit(dt);else if(P>60&&Math.random()<.5)put(smoke,R(-1,1),H0+1,R(-1,1),R(-.6,.6),R(4,7),R(-.6,.6),R(3,4.5));
+ stepPool(smoke,dt,-1.2,.35,smokeFn);stepPool(lava,dt,14,.05,lavaFn);updFlows(now);
+ ashK+=((er?1:0)-ashK)*Math.min(1,dt*(er?2.5:.5));hemi.intensity=.85-.45*ashK;sun.intensity=1-.65*ashK;scene.fog.color.copy(FOG0).lerp(FOG1,ashK);
+ {const tw=now/1000,a=wg.attributes.position;for(let i=0;i<a.count;i++)a.setY(i,Math.sin(W0[i*3]*.05+tw*.9)*.16+Math.cos(W0[i*3+2]*.07+tw*.7)*.12);a.needsUpdate=true}
+ for(const c of CL){c.position.x+=dt*1.2;if(c.position.x>130)c.position.x=-130}
+ glow.material.color.copy(gC1).lerp(gC2,Math.pow(t,1.5));glowL.intensity=.3+t*2.2+(er?5:0);
+ cam();if(er){camera.position.x+=(Math.random()-.5)*.5;camera.position.y+=(Math.random()-.5)*.5}
+ hud();drawChart();renderer.render(scene,camera)}
+function resize(){const a=$("app");renderer.setSize(a.clientWidth,a.clientHeight,false);camera.aspect=a.clientWidth/a.clientHeight;camera.updateProjectionMatrix()}
+addEventListener("resize",resize);resize();load();reset();refresh();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
